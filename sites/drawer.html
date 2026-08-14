@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvas rAF Drawing & Point Exporter</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .canvas-container {
+            background-color: white;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        canvas {
+            display: block;
+            cursor: crosshair;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        #clearBtn {
+            background-color: #ef4444;
+        }
+
+        #clearBtn:hover {
+            background-color: #dc2626;
+        }
+
+        #downloadBtn {
+            background-color: #3b82f6;
+        }
+
+        #downloadBtn:hover {
+            background-color: #2563eb;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Draw and Export Points (rAF Version)</h1>
+
+    <div class="canvas-container">
+        <canvas id="drawingCanvas" width="800" height="500"></canvas>
+    </div>
+
+    <div class="controls">
+        <button id="clearBtn">Clear Canvas</button>
+        <button id="downloadBtn">Download Points</button>
+    </div>
+
+    <script>
+        // Get DOM elements
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        const clearBtn = document.getElementById('clearBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        // State variables
+        let isPressed = false;
+        let pointsArray = [];
+        let mouseX = 0;
+        let mouseY = 0;
+
+        // Canvas styling
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // Helper function to get exact mouse coordinates
+        function getCoordinates(event) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: Math.round(event.clientX - rect.left),
+                y: Math.round(event.clientY - rect.top)
+            };
+        }
+
+        // Helper function to record a point in the state
+        function recordPoint(dragging) {
+            pointsArray.push({
+                x: mouseX,
+                y: mouseY,
+                dragging: dragging // true if continuing a line, false if starting a new one
+            });
+        }
+
+        // --- Event Listeners (State Mutation Only) ---
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return; // Only listen for left-click
+            isPressed = true;
+            const coords = getCoordinates(e);
+            mouseX = coords.x;
+            mouseY = coords.y;
+            
+            // Record the initial point of the stroke
+            recordPoint(false);
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            const coords = getCoordinates(e);
+            mouseX = coords.x;
+            mouseY = coords.y;
+            
+            // If the mouse is pressed while moving, record it as a dragging point
+            if (isPressed) {
+                recordPoint(true);
+            }
+        });
+
+        // Stop drawing when mouse is released or leaves the canvas
+        canvas.addEventListener('mouseup', () => isPressed = false);
+        canvas.addEventListener('mouseout', () => isPressed = false);
+
+
+        // --- Render Loop (Drawing Logic) ---
+
+        function renderLoop() {
+            // 1. Clear the canvas entirely for the new frame
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Redraw all points from the state array
+            if (pointsArray.length > 0) {
+                ctx.beginPath();
+                
+                for (let i = 0; i < pointsArray.length; i++) {
+                    const point = pointsArray[i];
+                    
+                    if (point.dragging && i > 0) {
+                        // Continue the current line
+                        ctx.lineTo(point.x, point.y);
+                    } else {
+                        // Move to a new starting position for a new stroke
+                        ctx.moveTo(point.x, point.y);
+                        // Draw a tiny dot just in case it was a single click without moving
+                        ctx.lineTo(point.x, point.y);
+                    }
+                }
+                // Stroke the entire path at once for optimal performance
+                ctx.stroke();
+            }
+
+            // 3. Request the next frame
+            requestAnimationFrame(renderLoop);
+        }
+
+        // Start the animation loop
+        requestAnimationFrame(renderLoop);
+
+
+        // --- Button Logic ---
+
+        clearBtn.addEventListener('click', () => {
+            // Since the loop redraws based on the array, we just clear the state
+            pointsArray = [];
+        });
+
+        downloadBtn.addEventListener('click', () => {
+
+            let array = []
+
+            pointsArray.forEach(({x, y}, index) => {
+                array.push([x, y])
+            })
+
+            console.log(JSON.stringify(array, null, 2))
+        });
+    </script>
+</body>
+</html>

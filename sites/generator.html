@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realistic Train Network Map</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            font-family: 'Arial', sans-serif;
+        }
+
+        .container {
+            text-align: center;
+            padding: 20px;
+        }
+
+        h1 {
+            color: white;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .subtitle {
+            color: #ddd;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        canvas {
+            border: 4px solid #fff;
+            background: linear-gradient(135deg, #f5deb3 0%, #ffe4b5 100%);
+            display: block;
+            margin: 20px auto;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            border-radius: 8px;
+        }
+
+        .info {
+            color: white;
+            margin-top: 20px;
+            font-size: 13px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .legend {
+            text-align: left;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+
+        .legend-box {
+            width: 20px;
+            height: 20px;
+            margin-right: 8px;
+            border-radius: 3px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 15px;
+        }
+
+        button {
+            background-color: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        button:hover {
+            background-color: #ff5252;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button.secondary {
+            background-color: #4CAF50;
+        }
+
+        button.secondary:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚂 Realistic Train Network Map</h1>
+        <p class="subtitle">Procedurally Generated Railway System</p>
+        <canvas id="mapCanvas" width="1000" height="700"></canvas>
+        <div class="info">
+            <div>
+                <p><strong>Routes:</strong> <span id="routeCount">0</span></p>
+                <p><strong>Stations:</strong> <span id="stationCount">0</span></p>
+                <p><strong>Junctions:</strong> <span id="junctionCount">0</span></p>
+            </div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-box" style="background: #8B4513;"></div>
+                    <span>Main Lines</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box" style="background: #CD853F;"></div>
+                    <span>Branch Lines</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box" style="background: #FFD700; border: 2px solid #FFA500;"></div>
+                    <span>Major Stations</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box" style="background: #DEB887;"></div>
+                    <span>Minor Stations</span>
+                </div>
+            </div>
+        </div>
+        <div class="button-group">
+            <button onclick="generateNewMap()">Generate New Network</button>
+            <button class="secondary" onclick="exportTrackData()">Export Track Data</button>
+        </div>
+    </div>
+
+    <script>
+        // Seeded random number generator
+        class SeededRandom {
+            constructor(seed) {
+                this.seed = seed;
+            }
+
+            next() {
+                this.seed = (this.seed * 9301 + 49297) % 233280;
+                return this.seed / 233280;
+            }
+
+            range(min, max) {
+                return min + this.next() * (max - min);
+            }
+
+            randInt(min, max) {
+                return Math.floor(this.range(min, max + 1));
+            }
+        }
+
+        // Train route class with smooth curves
+        class TrainRoute {
+            constructor(startX, startY, startAngle, random, maxSegments = 60) {
+                this.points = [{x: startX, y: startY}];
+                this.random = random;
+                this.maxSegments = maxSegments;
+                this.currentAngle = startAngle;
+                this.stations = [];
+                this.isMainLine = true;
+                this.branches = [];
+                this.segmentLength = 12;
+            }
+
+            generatePath(canvasWidth, canvasHeight, minBounds = 10) {
+                let x = this.points[0].x;
+                let y = this.points[0].y;
+                let angle = this.currentAngle;
+                let segmentsSinceLastTurn = 0;
+
+                for (let i = 0; i < this.maxSegments; i++) {
+                    // Random turns with smooth transitions - more frequent turns for curviness
+                    if (segmentsSinceLastTurn > 2 + this.random.randInt(0, 4)) {
+                        // Random turn angle with more aggressive curves
+                        const turnAmount = this.random.range(-0.5, 0.5);
+                        angle += turnAmount;
+                        segmentsSinceLastTurn = 0;
+                    } else {
+                        // Small continuous curve even between major turns
+                        angle += this.random.range(-0.08, 0.08);
+                        segmentsSinceLastTurn++;
+                    }
+
+                    x += Math.cos(angle) * this.segmentLength;
+                    y += Math.sin(angle) * this.segmentLength;
+
+                    // Boundary checking
+                    if (x < minBounds || x > canvasWidth - minBounds || 
+                        y < minBounds || y > canvasHeight - minBounds) {
+                        break;
+                    }
+
+                    this.points.push({x, y});
+
+                    // Place stations
+                    if (i % 12 === 0 && this.points.length > 1) {
+                        this.stations.push({
+                            x: x,
+                            y: y,
+                            isMajor: this.random.next() > 0.65,
+                            name: this.generateStationName()
+                        });
+                    }
+                }
+            }
+
+            generateStationName() {
+                const prefixes = ['North', 'South', 'East', 'West', 'New', 'Old', 'Upper', 'Lower', 'Mid'];
+                const suffixes = ['ville', 'port', 'field', 'town', 'city', 'bridge', 'station', 'bay', 'ford', 'wick'];
+                const prefix = prefixes[Math.floor(this.random.next() * prefixes.length)];
+                const suffix = suffixes[Math.floor(this.random.next() * suffixes.length)];
+                return prefix + ' ' + suffix;
+            }
+
+            // Create a branch from this route
+            createBranch(pointIndex, angleOffset, random) {
+                if (pointIndex >= this.points.length) return null;
+                const point = this.points[pointIndex];
+                const branchAngle = this.currentAngle + angleOffset;
+                const branch = new TrainRoute(point.x, point.y, branchAngle, random, Math.floor(this.maxSegments * 0.5));
+                branch.isMainLine = false;
+                return branch;
+            }
+        }
+
+        // Railway network generator
+        class RailwayNetwork {
+            constructor(width, height, seed) {
+                this.width = width;
+                this.height = height;
+                this.random = new SeededRandom(seed);
+                this.routes = [];
+                this.allStations = [];
+                this.cityHubs = this.generateCityHubs();
+            }
+
+            generateCityHubs() {
+                // Generate 4-6 major cities to act as route anchors
+                const hubs = [];
+                const hubCount = 4 + this.random.randInt(0, 2);
+                
+                for (let i = 0; i < hubCount; i++) {
+                    hubs.push({
+                        x: this.random.range(150, this.width - 150),
+                        y: this.random.range(150, this.height - 150)
+                    });
+                }
+                
+                return hubs;
+            }
+
+            generate() {
+                // Create main routes connecting city hubs
+                for (let i = 0; i < this.cityHubs.length; i++) {
+                    const startHub = this.cityHubs[i];
+                    const endHub = this.cityHubs[(i + 1) % this.cityHubs.length];
+                    
+                    // Create intermediate waypoint for more interesting paths
+                    const wayX = startHub.x + this.random.range(-100, 100);
+                    const wayY = startHub.y + this.random.range(-100, 100);
+                    
+                    // Route from start to waypoint
+                    const angle1 = Math.atan2(wayY - startHub.y, wayX - startHub.x);
+                    const route1 = new TrainRoute(startHub.x, startHub.y, angle1, this.random, 80 + this.random.randInt(0, 60));
+                    route1.generatePath(this.width, this.height);
+                    this.routes.push(route1);
+                    
+                    // Route from waypoint to end
+                    const angle2 = Math.atan2(endHub.y - wayY, endHub.x - wayX);
+                    const route2 = new TrainRoute(wayX, wayY, angle2, this.random, 80 + this.random.randInt(0, 60));
+                    route2.generatePath(this.width, this.height);
+                    this.routes.push(route2);
+                    
+                    // Create secondary routes with different angles
+                    const secondaryAngle = angle1 + this.random.range(-0.7, 0.7);
+                    const secondaryRoute = new TrainRoute(startHub.x, startHub.y, secondaryAngle, this.random, 60 + this.random.randInt(0, 40));
+                    secondaryRoute.generatePath(this.width, this.height);
+                    this.routes.push(secondaryRoute);
+                }
+
+                // Create regional branches
+                const branchCount = 8 + this.random.randInt(0, 8);
+                for (let b = 0; b < branchCount; b++) {
+                    const parentRoute = this.routes[this.random.randInt(0, this.routes.length - 1)];
+                    const branchPointIdx = this.random.randInt(Math.floor(parentRoute.points.length * 0.2), 
+                                                               Math.floor(parentRoute.points.length * 0.8));
+                    
+                    const angleOffset = this.random.range(-0.9, 0.9);
+                    const branch = parentRoute.createBranch(branchPointIdx, angleOffset, this.random);
+                    
+                    if (branch) {
+                        branch.generatePath(this.width, this.height);
+                        parentRoute.branches.push(branch);
+                        this.routes.push(branch);
+                    }
+                }
+
+                // Collect all stations
+                this.routes.forEach(route => {
+                    this.allStations.push(...route.stations);
+                    route.branches.forEach(branch => {
+                        this.allStations.push(...branch.stations);
+                    });
+                });
+
+                return this.routes;
+            }
+
+            getStats() {
+                let totalJunctions = 0;
+                const junctionSet = new Set();
+
+                for (let i = 0; i < this.routes.length; i++) {
+                    for (let j = i + 1; j < this.routes.length; j++) {
+                        const route1 = this.routes[i];
+                        const route2 = this.routes[j];
+                        
+                        for (let p1 of route1.points) {
+                            for (let p2 of route2.points) {
+                                const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                                if (dist < 40) {
+                                    const key = `${Math.round((p1.x + p2.x) / 2 / 10)},${Math.round((p1.y + p2.y) / 2 / 10)}`;
+                                    junctionSet.add(key);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return {
+                    routes: this.routes.length,
+                    stations: this.allStations.length,
+                    junctions: junctionSet.size
+                };
+            }
+        }
+
+        // Canvas renderer
+        class NetworkRenderer {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+            }
+
+            clear() {
+                this.ctx.fillStyle = '#f5deb3';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+
+            drawNetwork(network) {
+                // Draw all routes
+                network.routes.forEach(route => {
+                    this.drawRoute(route);
+                });
+
+                // Draw junctions
+                this.drawJunctions(network);
+
+                // Draw all stations
+                network.allStations.forEach(station => {
+                    this.drawStation(station);
+                });
+            }
+
+            drawRoute(route) {
+                if (route.points.length < 2) return;
+
+                const lineColor = route.isMainLine ? '#8B4513' : '#CD853F';
+                const lineWidth = route.isMainLine ? 2 : 1.5;
+
+                this.ctx.strokeStyle = lineColor;
+                this.ctx.lineWidth = lineWidth;
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(route.points[0].x, route.points[0].y);
+
+                // Use quadratic curves for smoother lines
+                for (let i = 1; i < route.points.length; i++) {
+                    const prev = route.points[i - 1];
+                    const curr = route.points[i];
+                    
+                    if (i < route.points.length - 1) {
+                        const next = route.points[i + 1];
+                        const cpx = (curr.x + next.x) / 2;
+                        const cpy = (curr.y + next.y) / 2;
+                        this.ctx.quadraticCurveTo(curr.x, curr.y, cpx, cpy);
+                    } else {
+                        this.ctx.lineTo(curr.x, curr.y);
+                    }
+                }
+
+                this.ctx.stroke();
+            }
+
+            drawStation(station) {
+                const radius = station.isMajor ? 8 : 5;
+                const fillColor = station.isMajor ? '#FFD700' : '#DEB887';
+                const borderColor = station.isMajor ? '#FFA500' : '#8B7355';
+
+                this.ctx.fillStyle = fillColor;
+                this.ctx.beginPath();
+                this.ctx.arc(station.x, station.y, radius, 0, Math.PI * 2);
+                this.ctx.fill();
+
+                this.ctx.strokeStyle = borderColor;
+                this.ctx.lineWidth = 2;
+                this.ctx.stroke();
+            }
+
+            drawJunctions(network) {
+                const junctionMap = new Map();
+
+                for (let i = 0; i < network.routes.length; i++) {
+                    for (let j = i + 1; j < network.routes.length; j++) {
+                        const route1 = network.routes[i];
+                        const route2 = network.routes[j];
+                        
+                        for (let p1 of route1.points) {
+                            for (let p2 of route2.points) {
+                                const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                                if (dist < 35) {
+                                    const jx = Math.round((p1.x + p2.x) / 2);
+                                    const jy = Math.round((p1.y + p2.y) / 2);
+                                    const key = `${jx},${jy}`;
+                                    
+                                    if (!junctionMap.has(key)) {
+                                        junctionMap.set(key, {x: jx, y: jy});
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                junctionMap.forEach(junction => {
+                    this.ctx.fillStyle = '#FF6347';
+                    this.ctx.beginPath();
+                    this.ctx.arc(junction.x, junction.y, 4, 0, Math.PI * 2);
+                    this.ctx.fill();
+                });
+            }
+        }
+
+        // Main application
+        const renderer = new NetworkRenderer('mapCanvas');
+        let currentNetwork = null;
+
+        function generateNewMap() {
+            const seed = Math.random() * 1000000;
+            const network = new RailwayNetwork(1000, 700, seed);
+            network.generate();
+            currentNetwork = network;
+
+            renderer.clear();
+            renderer.drawNetwork(network);
+
+            const stats = network.getStats();
+            document.getElementById('routeCount').textContent = stats.routes;
+            document.getElementById('stationCount').textContent = stats.stations;
+            document.getElementById('junctionCount').textContent = stats.junctions;
+        }
+
+        function exportTrackData() {
+            if (!currentNetwork) {
+                console.log("No network generated yet!");
+                return;
+            }
+
+            const trackData = [];
+
+            // Extract all track coordinates from all routes
+            currentNetwork.routes.forEach((route, routeIndex) => {
+                route.points.forEach((point) => {
+                    trackData.push([Math.round(point.x), Math.round(point.y)]);
+                });
+            });
+
+            console.log(trackData);
+            console.log(`Total track points: ${trackData.length}`);
+        }
+
+        // Generate initial map
+        generateNewMap();
+    </script>
+</body>
+</html>

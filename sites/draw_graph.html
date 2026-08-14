@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1st Quadrant Spatial Graph Visualizer</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      margin-top: 0;
+      color: #1e293b;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 12px;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+      padding: 15px 20px;
+      border-radius: 8px;
+      max-width: 900px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+      border: 1px solid #e2e8f0;
+    }
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    label { 
+      font-size: 14px; 
+      font-weight: 500;
+      color: #334155;
+    }
+    select, button, input[type="range"] {
+      background: #f1f5f9;
+      color: #0f172a;
+      border: 1px solid #cbd5e1;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover { background: #e2e8f0; }
+    button.primary {
+      background: #2563eb;
+      color: #ffffff;
+      border-color: #2563eb;
+      font-weight: 500;
+    }
+    button.primary:hover { background: #1d4ed8; }
+    button.success {
+      background: #16a34a;
+      color: #ffffff;
+      border-color: #16a34a;
+      font-weight: 500;
+    }
+    button.success:hover { background: #15803d; }
+
+    /* Modal Styling for JSON Import */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(2px);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal-card {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 600px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .modal-card h3 { margin: 0; color: #1e293b; }
+    textarea {
+      width: 100%;
+      height: 220px;
+      font-family: monospace;
+      font-size: 13px;
+      padding: 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #f8fafc;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    canvas {
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background-color: #ffffff;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      cursor: crosshair;
+    }
+    #info {
+      margin-top: 15px;
+      font-size: 14px;
+      color: #475569;
+      max-width: 800px;
+      word-break: break-all;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>1st Quadrant Spatial Graph Visualizer</h1>
+
+  <div class="controls">
+    <div class="control-group">
+      <label for="nodeSlider">Nodes: <b id="nodeVal">300</b></label>
+      <input type="range" id="nodeSlider" min="10" max="2000" step="10" value="300">
+    </div>
+
+    <div class="control-group">
+      <label for="edgeSlider">Max Edges/Node: <b id="edgeVal">4</b></label>
+      <input type="range" id="edgeSlider" min="1" max="50" value="4">
+    </div>
+
+    <button id="refreshBtn" class="primary">🔄 New Random Graph</button>
+    <button id="importBtn" class="success">📥 Import JSON Graph</button>
+    <button id="exportBtn">📋 Export JSON</button>
+  </div>
+
+  <div class="controls">
+    <div class="control-group">
+      <label for="startNode">Start:</label>
+      <select id="startNode"></select>
+    </div>
+
+    <div class="control-group">
+      <label for="endNode">End:</label>
+      <select id="endNode"></select>
+    </div>
+
+    <button id="findPathBtn">Find Shortest Path</button>
+    <button id="clearBtn">Clear Path</button>
+  </div>
+
+  <canvas id="graphCanvas" width="800" height="800"></canvas>
+  <div id="info">Hover over any dot to view its coordinates tooltip.</div>
+
+  <!-- IMPORT MODAL DIALOG -->
+  <div id="importModal" class="modal-overlay">
+    <div class="modal-card">
+      <h3>Paste Custom Graph JSON</h3>
+      <p style="font-size: 13px; color: #64748b; margin: 0;">Paste your graph adjacency structure map below:</p>
+      <textarea id="jsonInput" placeholder='{\n  "10_10": [[10, 50], [30, 20]],\n  "10_50": [[10, 10], [40, 80]]\n}'></textarea>
+      <div class="modal-actions">
+        <button id="cancelModalBtn">Cancel</button>
+        <button id="applyJsonBtn" class="primary">Apply Custom Graph</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let graphData = {};
+    let highlightedPath = [];
+    let hoveredNode = null;
+    let mousePos = { x: 0, y: 0 };
+
+    const canvas = document.getElementById('graphCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+    const paddingLeft = 60;
+    const paddingBottom = 60;
+    const paddingTop = 40;
+    const paddingRight = 40;
+
+    const plotWidth = canvasWidth - paddingLeft - paddingRight;
+    const plotHeight = canvasHeight - paddingTop - paddingBottom;
+
+    const nodeSlider = document.getElementById('nodeSlider');
+    const edgeSlider = document.getElementById('edgeSlider');
+    const nodeVal = document.getElementById('nodeVal');
+    const edgeVal = document.getElementById('edgeVal');
+    const startSelect = document.getElementById('startNode');
+    const endSelect = document.getElementById('endNode');
+    const info = document.getElementById('info');
+
+    const importModal = document.getElementById('importModal');
+    const jsonInput = document.getElementById('jsonInput');
+
+    function toPixelX(x) { return paddingLeft + (x / 100) * plotWidth; }
+    function toPixelY(y) { return (canvasHeight - paddingBottom) - (y / 100) * plotHeight; }
+
+    // --- CONTINUOUS RANDOM GRAPH GENERATOR ---
+    function generateRandomGraph(targetNodeCount, maxEdgesPerNode) {
+      const nodes = [];
+      const graph = {};
+      const seen = new Set();
+
+      while (nodes.length < targetNodeCount) {
+        const x = parseFloat((Math.random() * 96 + 2).toFixed(1));
+        const y = parseFloat((Math.random() * 96 + 2).toFixed(1));
+        const key = `${x}_${y}`;
+        
+        if (!seen.has(key)) {
+          seen.add(key);
+          nodes.push({ key, x, y });
+        }
+      }
+
+      const searchRadius = Math.max(8, 120 / Math.sqrt(targetNodeCount));
+
+      nodes.forEach(node1 => {
+        const candidates = [];
+        nodes.forEach(node2 => {
+          if (node1.key !== node2.key) {
+            const dx = node1.x - node2.x;
+            const dy = node1.y - node2.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist <= searchRadius) {
+              candidates.push({ key: node2.key, pt: [node2.x, node2.y], dist });
+            }
+          }
+        });
+
+        candidates.sort((a, b) => a.dist - b.dist);
+        const selectedCount = Math.min(candidates.length, Math.floor(Math.random() * maxEdgesPerNode) + 1);
+        graph[node1.key] = candidates.slice(0, selectedCount).map(c => c.pt);
+      });
+
+      for (const [key1, neighbors] of Object.entries(graph)) {
+        const [x1, y1] = key1.split('_').map(Number);
+        neighbors.forEach(([x2, y2]) => {
+          const key2 = `${x2}_${y2}`;
+          if (graph[key2] && !graph[key2].some(([nx, ny]) => nx === x1 && ny === y1)) {
+            graph[key2].push([x1, y1]);
+          }
+        });
+      }
+
+      return graph;
+    }
+
+    function updateDropdowns() {
+      startSelect.innerHTML = '';
+      endSelect.innerHTML = '';
+      const keys = Object.keys(graphData);
+
+      keys.forEach(key => {
+        startSelect.add(new Option(key, key));
+        endSelect.add(new Option(key, key));
+      });
+
+      if (keys.length > 0) {
+        startSelect.value = keys[0];
+        endSelect.value = keys[keys.length - 1];
+      }
+    }
+
+    // --- CANVAS RENDERER WITH TOOLTIPS ---
+    function drawGraph() {
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      const totalNodes = Object.keys(graphData).length;
+
+      // 1. Draw Axes & Grid
+      const originX = paddingLeft;
+      const originY = canvasHeight - paddingBottom;
+
+      ctx.strokeStyle = '#f1f5f9';
+      ctx.lineWidth = 1;
+      ctx.fillStyle = '#64748b';
+      ctx.font = '12px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      for (let i = 0; i <= 100; i += 10) {
+        const px = toPixelX(i);
+        const py = toPixelY(i);
+
+        ctx.beginPath();
+        ctx.moveTo(px, paddingTop);
+        ctx.lineTo(px, originY);
+        ctx.stroke();
+
+        ctx.fillText(i, px, originY + 8);
+
+        ctx.beginPath();
+        ctx.moveTo(originX, py);
+        ctx.lineTo(canvasWidth - paddingRight, py);
+        ctx.stroke();
+
+        ctx.save();
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(i, originX - 10, py);
+        ctx.restore();
+      }
+
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+      ctx.moveTo(originX, originY);
+      ctx.lineTo(canvasWidth - paddingRight + 15, originY);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(originX, originY);
+      ctx.lineTo(originX, paddingTop - 15);
+      ctx.stroke();
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 13px system-ui';
+      ctx.fillText('X Axis', canvasWidth - paddingRight - 10, originY + 30);
+      
+      ctx.save();
+      ctx.translate(originX - 35, paddingTop + 20);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText('Y Axis', 0, 0);
+      ctx.restore();
+
+      // 2. Draw Edges
+      ctx.strokeStyle = totalNodes > 800 ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.5)';
+      ctx.lineWidth = totalNodes > 500 ? 0.5 : 1;
+
+      for (const [key, neighbors] of Object.entries(graphData)) {
+        const [x1, y1] = key.split('_').map(Number);
+        neighbors.forEach(([x2, y2]) => {
+          ctx.beginPath();
+          ctx.moveTo(toPixelX(x1), toPixelY(y1));
+          ctx.lineTo(toPixelX(x2), toPixelY(y2));
+          ctx.stroke();
+        });
+      }
+
+      // 3. Draw Dijkstra Shortest Path
+      if (highlightedPath.length > 1) {
+        ctx.strokeStyle = '#2563eb';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        for (let i = 0; i < highlightedPath.length; i++) {
+          const [x, y] = highlightedPath[i].split('_').map(Number);
+          if (i === 0) ctx.moveTo(toPixelX(x), toPixelY(y));
+          else ctx.lineTo(toPixelX(x), toPixelY(y));
+        }
+        ctx.stroke();
+      }
+
+      // 4. Draw Nodes
+      const baseRadius = totalNodes > 1000 ? 1.8 : totalNodes > 500 ? 2.5 : 4;
+
+      for (const key of Object.keys(graphData)) {
+        const [x, y] = key.split('_').map(Number);
+        const px = toPixelX(x);
+        const py = toPixelY(y);
+
+        let color = '#0284c7';
+        let radius = baseRadius;
+
+        if (key === hoveredNode) {
+          color = '#f59e0b';
+          radius = Math.max(8, baseRadius + 4);
+        } else if (highlightedPath.length > 0) {
+          if (key === highlightedPath[0]) { color = '#16a34a'; radius = Math.max(7, baseRadius + 3); }
+          else if (key === highlightedPath[highlightedPath.length - 1]) { color = '#dc2626'; radius = Math.max(7, baseRadius + 3); }
+          else if (highlightedPath.includes(key)) { color = '#2563eb'; radius = Math.max(5, baseRadius + 2); }
+        }
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(px, py, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (totalNodes <= 600 || key === hoveredNode) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
+
+      // 5. Draw Hover Tooltip
+      if (hoveredNode) {
+        const [nx, ny] = hoveredNode.split('_').map(Number);
+        const neighborCount = graphData[hoveredNode].length;
+        
+        const labelText = `📍 (${nx}, ${ny})`;
+        const subText = `Edges: ${neighborCount}`;
+
+        ctx.font = 'bold 12px system-ui';
+        const labelWidth = ctx.measureText(labelText).width;
+        ctx.font = '11px system-ui';
+        const subWidth = ctx.measureText(subText).width;
+
+        const boxWidth = Math.max(labelWidth, subWidth) + 20;
+        const boxHeight = 42;
+
+        let tooltipX = mousePos.x + 12;
+        let tooltipY = mousePos.y - 48;
+
+        if (tooltipX + boxWidth > canvasWidth - 10) tooltipX = mousePos.x - boxWidth - 10;
+        if (tooltipY < 10) tooltipY = mousePos.y + 15;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1;
+        
+        ctx.beginPath();
+        ctx.roundRect(tooltipX, tooltipY, boxWidth, boxHeight, 6);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px system-ui';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(labelText, tooltipX + 10, tooltipY + 8);
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '11px system-ui';
+        ctx.fillText(subText, tooltipX + 10, tooltipY + 24);
+      }
+    }
+
+    // --- REGENERATE GRAPH ---
+    function rebuildGraph() {
+      highlightedPath = [];
+      hoveredNode = null;
+      const nodeCount = parseInt(nodeSlider.value);
+      const maxEdges = parseInt(edgeSlider.value);
+      graphData = generateRandomGraph(nodeCount, maxEdges);
+      updateDropdowns();
+      drawGraph();
+      info.textContent = `Generated new graph with ${Object.keys(graphData).length} connected nodes!`;
+    }
+
+    // --- DIJKSTRA ALGORITHM ---
+    function runDijkstra(start, end) {
+      const distances = {};
+      const previous = {};
+      const keys = Object.keys(graphData);
+      const unvisited = new Set(keys);
+
+      keys.forEach(k => distances[k] = Infinity);
+      distances[start] = 0;
+
+      while (unvisited.size > 0) {
+        let current = null;
+        let smallest = Infinity;
+        for (const node of unvisited) {
+          if (distances[node] < smallest) {
+            smallest = distances[node];
+            current = node;
+          }
+        }
+
+        if (current === null || current === end) break;
+        unvisited.delete(current);
+
+        const [cx, cy] = current.split('_').map(Number);
+        const neighbors = graphData[current] || [];
+
+        neighbors.forEach(([nx, ny]) => {
+          const nKey = `${nx}_${ny}`;
+          if (unvisited.has(nKey)) {
+            const dist = Math.hypot(nx - cx, ny - cy);
+            const alt = distances[current] + dist;
+            if (alt < distances[nKey]) {
+              distances[nKey] = alt;
+              previous[nKey] = current;
+            }
+          }
+        });
+      }
+
+      const path = [];
+      let curr = end;
+      while (curr) {
+        path.unshift(curr);
+        curr = previous[curr];
+      }
+
+      return { path: path[0] === start ? path : [], distance: distances[end] };
+    }
+
+    // --- EVENT LISTENERS ---
+    nodeSlider.addEventListener('change', rebuildGraph);
+    edgeSlider.addEventListener('change', rebuildGraph);
+
+    nodeSlider.addEventListener('input', (e) => { nodeVal.textContent = e.target.value; });
+    edgeSlider.addEventListener('input', (e) => { edgeVal.textContent = e.target.value; });
+
+    document.getElementById('refreshBtn').addEventListener('click', rebuildGraph);
+
+    // --- JSON IMPORT MODAL LOGIC ---
+    document.getElementById('importBtn').addEventListener('click', () => {
+      importModal.style.display = 'flex';
+      jsonInput.focus();
+    });
+
+    document.getElementById('cancelModalBtn').addEventListener('click', () => {
+      importModal.style.display = 'none';
+    });
+
+    document.getElementById('applyJsonBtn').addEventListener('click', () => {
+      try {
+        const rawJson = jsonInput.value.trim();
+        if (!rawJson) return;
+        
+        const parsedData = JSON.parse(rawJson);
+
+        // Validate basic structure
+        if (typeof parsedData !== 'object' || Array.isArray(parsedData)) {
+          throw new Error('JSON must be an object with coordinate keys.');
+        }
+
+        graphData = parsedData;
+        highlightedPath = [];
+        hoveredNode = null;
+        
+        // Update sliders & dropdowns to match custom imported graph
+        const keyCount = Object.keys(graphData).length;
+        nodeSlider.value = keyCount;
+        nodeVal.textContent = keyCount;
+
+        updateDropdowns();
+        drawGraph();
+
+        importModal.style.display = 'none';
+        info.innerHTML = `<span style="color: #16a34a; font-weight: bold;">✅ Successfully imported custom graph with ${keyCount} nodes!</span>`;
+      } catch (err) {
+        alert('Invalid JSON format: ' + err.message);
+      }
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      const jsonString = JSON.stringify(graphData, null, 2);
+      navigator.clipboard.writeText(jsonString).then(() => {
+        info.innerHTML = `<span style="color: #16a34a; font-weight: bold;">✅ Graph JSON copied to clipboard! (${Object.keys(graphData).length} nodes)</span>`;
+      }).catch(err => {
+        info.textContent = 'Failed to copy: ' + err;
+      });
+    });
+
+    document.getElementById('findPathBtn').addEventListener('click', () => {
+      const start = startSelect.value;
+      const end = endSelect.value;
+      const result = runDijkstra(start, end);
+      highlightedPath = result.path;
+      drawGraph();
+
+      if (result.path.length > 0) {
+        info.innerHTML = `Shortest Path Distance: <b>${result.distance.toFixed(2)}</b>. Route: <code>${result.path.join(' ➔ ')}</code>`;
+      } else {
+        info.textContent = 'No path found between selected nodes.';
+      }
+    });
+
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      highlightedPath = [];
+      drawGraph();
+      info.textContent = 'Path cleared.';
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      mousePos.x = e.clientX - rect.left;
+      mousePos.y = e.clientY - rect.top;
+
+      let foundNode = null;
+      const hitRadius = Object.keys(graphData).length > 800 ? 6 : 10;
+
+      for (const key of Object.keys(graphData)) {
+        const [x, y] = key.split('_').map(Number);
+        if (Math.hypot(mousePos.x - toPixelX(x), mousePos.y - toPixelY(y)) <= hitRadius) {
+          foundNode = key;
+          break;
+        }
+      }
+
+      if (hoveredNode !== foundNode) {
+        hoveredNode = foundNode;
+        drawGraph();
+      } else if (hoveredNode) {
+        drawGraph();
+      }
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      if (hoveredNode) {
+        hoveredNode = null;
+        drawGraph();
+      }
+    });
+
+    rebuildGraph();
+  </script>
+</body>
+</html>
